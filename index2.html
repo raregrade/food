@@ -319,6 +319,8 @@
         .order-items-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding: 10px; background: var(--bg); border-radius: 12px; }
         .order-item-chip { display: flex; align-items: center; gap: 6px; background: white; border: 1px solid var(--border); border-radius: 10px; padding: 5px 10px 5px 5px; }
         .order-item-chip-placeholder { width: 36px; height: 36px; border-radius: 7px; background: var(--accent-light); display: flex; align-items: center; justify-content: center; font-size: 1rem; flex-shrink: 0; }
+        /* ── UPDATED: item chip with real image ── */
+        .order-item-chip-img { width: 36px; height: 36px; border-radius: 7px; object-fit: cover; flex-shrink: 0; }
         .order-item-chip-info { display: flex; flex-direction: column; }
         .order-item-chip-name { font-size: 0.78rem; font-weight: 700; color: var(--text); white-space: nowrap; max-width: 90px; overflow: hidden; text-overflow: ellipsis; }
         .order-item-chip-qty { font-size: 0.68rem; color: var(--dim); font-weight: 600; }
@@ -327,6 +329,28 @@
         .order-customer-avatar { width: 32px; height: 32px; border-radius: 9px; background: var(--store-gradient); display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 0.75rem; flex-shrink: 0; }
         .order-customer-name { font-weight: 700; font-size: 0.86rem; color: var(--text); }
         .order-customer-id { font-size: 0.72rem; color: var(--dim); font-weight: 600; }
+        /* ── CUSTOMER LOCATION CARD ──────────────────────────────────── */
+        .order-location-card {
+            margin-top: 8px; border-radius: 12px; overflow: hidden;
+            border: 1px solid var(--border); background: white;
+        }
+        .order-location-map-preview {
+            width: 100%; height: 110px; object-fit: cover; display: block;
+            background: linear-gradient(135deg, #e8f4fd, #dbeafe);
+        }
+        .order-location-footer {
+            padding: 8px 12px; display: flex; align-items: center; gap: 8px;
+            border-top: 1px solid var(--border);
+        }
+        .order-location-text { flex: 1; font-size: 0.76rem; color: var(--dim); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .order-location-open-btn {
+            background: var(--accent); color: white; border: none; border-radius: 999px;
+            padding: 5px 12px; font-size: 0.72rem; font-weight: 700; cursor: pointer;
+            display: flex; align-items: center; gap: 4px; font-family: inherit;
+            transition: var(--transition); white-space: nowrap; flex-shrink: 0;
+            text-decoration: none;
+        }
+        .order-location-open-btn:hover { background: var(--accent-dark); transform: translateY(-1px); }
         /* ── PROFILE SECTION ────────────────────────────────────────── */
         .profile-section { background: white; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border); padding: 26px; margin-bottom: 18px; }
         .profile-section h3 { font-size: 0.88rem; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -1982,6 +2006,83 @@ function syncFeaturedGlobal() {
         }, {});
     db.ref(`featured_items/${VENDOR_KEY}`).set(Object.keys(featured).length ? featured : null);
 }
+
+// ── HELPER: build customer location card ─────────────────────────
+function buildLocationCard(o) {
+    // Collect all possible lat/lng sources from the order
+    const lat = o.customerLat || o.deliveryLat || o.lat || (o.location && o.location.lat) || (o.deliveryLocation && o.deliveryLocation.lat) || null;
+    const lng = o.customerLng || o.deliveryLng || o.lng || (o.location && o.location.lng) || (o.deliveryLocation && o.deliveryLocation.lng) || null;
+    const address = o.deliveryAddress || o.address || '';
+
+    if (!lat || !lng) {
+        // No coordinates — show address only if available
+        if (!address) return '';
+        return `<div class="order-address">
+            <i data-lucide="map-pin" style="width:13px;height:13px;"></i>
+            <span style="flex:1;">${address}</span>
+        </div>`;
+    }
+
+    // We have coordinates — build a rich location card with static map preview + open in maps link
+    const mapImgUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-s+06C167(${lng},${lat})/${lng},${lat},14,0/560x110@2x?access_token=${MAPBOX_TOKEN}`;
+    const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+    const wazeUrl = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+    const displayAddr = address || `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`;
+
+    return `<div class="order-location-card">
+        <img class="order-location-map-preview" src="${mapImgUrl}" alt="Customer location map" loading="lazy" onerror="this.style.display='none'">
+        <div class="order-location-footer">
+            <i data-lucide="map-pin" style="width:14px;height:14px;color:var(--accent);flex-shrink:0;"></i>
+            <span class="order-location-text">${displayAddr}</span>
+            <a href="${googleMapsUrl}" target="_blank" rel="noopener" class="order-location-open-btn" title="Open in Google Maps">
+                <i data-lucide="navigation" style="width:11px;height:11px;"></i> Maps
+            </a>
+            <a href="${wazeUrl}" target="_blank" rel="noopener" class="order-location-open-btn" style="background:#00b5e2;margin-left:4px;" title="Open in Waze">
+                🚗 Waze
+            </a>
+        </div>
+    </div>`;
+}
+
+// ── HELPER: build order item chips with images ────────────────────
+function buildOrderItemChips(o) {
+    const orderItems = o.items ? (Array.isArray(o.items) ? o.items : Object.values(o.items)) : [];
+    if (!orderItems.length) return '';
+
+    const chips = orderItems.map(item => {
+        // Try to find the item in menuCache to get its image
+        let imgEl = '';
+        const menuItem = item.itemKey ? menuCache[item.itemKey] : null;
+        // Also try matching by name
+        const menuItemByName = !menuItem
+            ? Object.values(menuCache).find(m => m.name === item.name)
+            : null;
+        const resolvedItem = menuItem || menuItemByName;
+
+        if (item.imageURL && item.imageURL !== '') {
+            // Order itself carries the image
+            imgEl = `<img class="order-item-chip-img" src="${item.imageURL}" alt="${item.name||'Item'}" loading="lazy" onerror="this.style.display='none';this.nextSibling.style.display='flex';">
+                     <div class="order-item-chip-placeholder" style="display:none;">${currentConfig.emoji}</div>`;
+        } else if (resolvedItem && resolvedItem.imageURL && resolvedItem.imageApproved) {
+            // Pull from vendor menu cache
+            imgEl = `<img class="order-item-chip-img" src="${resolvedItem.imageURL}" alt="${item.name||'Item'}" loading="lazy" onerror="this.style.display='none';this.nextSibling.style.display='flex';">
+                     <div class="order-item-chip-placeholder" style="display:none;">${currentConfig.emoji}</div>`;
+        } else {
+            imgEl = `<div class="order-item-chip-placeholder">${currentConfig.emoji}</div>`;
+        }
+
+        return `<div class="order-item-chip">
+            ${imgEl}
+            <div class="order-item-chip-info">
+                <span class="order-item-chip-name">${item.name||'Item'}</span>
+                <span class="order-item-chip-qty">×${item.quantity||1}${item.price ? ' · R'+Number(item.price).toFixed(2) : ''}</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    return `<div class="order-items-strip">${chips}</div>`;
+}
+
 // ── ORDERS ────────────────────────────────────────────────────────
 function renderOrders() {
     const container = document.getElementById('ordersContainer');
@@ -1998,16 +2099,18 @@ function renderOrders() {
         const color = statusColors[o.status] || '#f5a623';
         const label = statusLabels[o.status] || o.status;
         const customerName = o.customerName || o.customer?.name || 'Customer';
-        const orderItems = o.items ? Object.values(o.items) : [];
-        const chips = orderItems.map(item =>
-            `<div class="order-item-chip"><div class="order-item-chip-placeholder">${currentConfig.emoji}</div><div class="order-item-chip-info"><span class="order-item-chip-name">${item.name||'Item'}</span><span class="order-item-chip-qty">×${item.quantity||1}</span></div></div>`
-        ).join('');
-        const addressHtml = (o.deliveryAddress || o.address) ?
-            `<div class="order-address"><i data-lucide="map-pin" style="width:13px;height:13px;"></i> ${o.deliveryAddress || o.address}</div>` : '';
+
+        // Build item chips with images
+        const itemChipsHtml = buildOrderItemChips(o);
+
+        // Build customer location card (map + address + buttons)
+        const locationCardHtml = buildLocationCard(o);
+
         const driverBanner = o.driverKey ?
             `<div style="margin-top:8px;padding:8px 12px;background:var(--accent-light);border:1px solid var(--accent);border-radius:10px;display:flex;align-items:center;gap:8px;font-size:0.82rem;font-weight:700;color:var(--accent);">
                 <i data-lucide="bike" style="width:14px;height:14px;flex-shrink:0;"></i> Driver: ${o.driverName||'Assigned'}
              </div>` : '';
+
         return `<div class="order-card">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
                 <div style="flex:1;min-width:0;">
@@ -2020,8 +2123,8 @@ function renderOrders() {
                         <div class="order-customer-avatar">${customerName.charAt(0).toUpperCase()}</div>
                         <div><div class="order-customer-name">${customerName}</div>${o.customerEmail?`<div class="order-customer-id">${o.customerEmail}</div>`:''}</div>
                     </div>
-                    ${addressHtml}
-                    ${chips ? `<div class="order-items-strip">${chips}</div>` : ''}
+                    ${itemChipsHtml}
+                    ${locationCardHtml}
                     ${driverBanner}
                 </div>
                 <div style="text-align:right;flex-shrink:0;">
